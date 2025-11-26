@@ -178,16 +178,100 @@ class Activation_Softmax_Loss_CategoricalCrossentropy:
 class Optimizer_SGD:
     # Initialize optimizer - set settings,
     # learning rate of 1. is default for this optimizer
-    def __init__(self, learning_rate=0.01):
+    def __init__(self, learning_rate=0.01, decay=0.0, momentum=0.0):
         self.learning_rate = learning_rate
-    
+        self.learning_rate_initial = learning_rate
+        self.decay = decay
+        self.iterations = 0
+        self.momentum = momentum
+
+    def pre_update_params(self):
+        if self.decay:
+            self.learning_rate = self.learning_rate_initial * (1.0 / (1.0 + self.decay * self.iterations))
+        self.iterations += 1
+
     # Update parameters
     def update_params(self, layer):
-        layer.weights -= self.learning_rate * layer.dweights
-        layer.biases -= self.learning_rate * layer.dbiases
+
+        # if we use momentum
+        if  self.momentum:
+            # If we haven't yet created momentum arrays, do so
+            if not hasattr(layer, 'weight_momentums'):
+                # Initialize momentum arrays
+                layer.weight_momentums = np.zeros_like(layer.weights)
+                layer.bias_momentums = np.zeros_like(layer.biases)
+
+            # Build weight updates with momentum
+            weight_updates = (self.momentum * layer.weight_momentums) - (self.learning_rate * layer.dweights)
+            layer.weight_momentums = weight_updates
+
+            # Build bias updates
+            bias_updates = (self.momentum * layer.bias_momentums) - (self.learning_rate * layer.dbiases)
+            layer.bias_momentums = bias_updates
+
+            # Update weights and biases using momentum
+            layer.weights += weight_updates
+            layer.biases += bias_updates
+        else:
+            # Vanilla SGD updates
+            layer.weights -= self.learning_rate * layer.dweights
+            layer.biases -= self.learning_rate * layer.dbiases
 
 
 
+
+
+# Stochastic gradient descent optimizer
+class Optimizer_Ada_Grad:
+    """AdaGrad Optimizer - Adaptive Gradient optimizer that adapts the learning rate
+    for each parameter based on historical gradients.
+    
+    This optimizer maintains a cache of squared gradients for weights and biases,
+    scaling down the learning rate for parameters with large gradients and scaling up
+    for parameters with small gradients. While AdaGrad can be effective for sparse data,
+    it is not as commonly used or as performant as Stochastic Gradient Descent (SGD)
+    variants like Adam or RMSprop for most deep learning applications.
+    
+    Attributes:
+        learning_rate (float): Initial learning rate (default: 1.0)
+        decay (float): Learning rate decay factor (default: 0.0)
+        epsilon (float): Small constant for numerical stability (default: 1e-7)
+        iterations (int): Number of update iterations performed
+    """
+
+    # Initialize optimizer - set settings,
+    # learning rate of 1. is default for this optimizer
+    def __init__(self, learning_rate=1, decay=0.0, epsilon=1e-7):
+        self.learning_rate = learning_rate
+        self.learning_rate_initial = learning_rate
+        self.decay = decay
+        self.iterations = 0
+        self.epsilon = epsilon
+
+    def pre_update_params(self):
+        if self.decay:
+            self.learning_rate = self.learning_rate_initial * (1.0 / (1.0 + self.decay * self.iterations))
+        self.iterations += 1
+
+    # Update parameters
+    def update_params(self, layer):
+
+        # If we haven't yet created momentum arrays, do so
+        if not hasattr(layer, 'weight_cache'):
+            # Initialize momentum arrays
+            layer.weight_cache = np.zeros_like(layer.weights)
+            layer.bias_cache = np.zeros_like(layer.biases)
+
+        layer.weight_cache += layer.dweights**2
+        layer.bias_cache += layer.dbiases**2
+
+        layer.weights += -self.learning_rate * layer.dweights / (np.sqrt(layer.weight_cache) + self.epsilon)
+        layer.biases += -self.learning_rate * layer.dbiases / (np.sqrt(layer.bias_cache) + self.epsilon)
+        
+
+##################################
+## Next RMSProp Optimizer p.296 ##
+##################################
 
 
 # Create dataset
@@ -201,16 +285,19 @@ activation1 = Activation_ReLU()
 
 # Create second Dense layer with 64 input features (as we take output
 # of previous layer here) and 64 output values (output values)
-dense2 = Layer_Dense(64 , 64)
+dense2 = Layer_Dense(64 , 3)
 
 # more layers can be added similarly
-activation2 = Activation_ReLU()
-dense3 = Layer_Dense(64 , 3)
+#activation2 = Activation_ReLU()
+#dense3 = Layer_Dense(64 , 64)
+
 # Create Softmax classifier's combined loss and activation
 loss_activation = Activation_Softmax_Loss_CategoricalCrossentropy()
 
 # Create optimizer
-optimizer = Optimizer_SGD(learning_rate=0.85)
+#optimizer = Optimizer_SGD(learning_rate=1.0, decay=0.0001, momentum=0.9)
+optimizer = Optimizer_Ada_Grad(decay=1e-4)
+
 
 # Lists to track metrics for plotting
 loss_history = []
@@ -228,12 +315,10 @@ for epoch in range(10001):
 
     # Perform a forward pass through remaining layers
     dense2.forward(activation1.output)
-    activation2.forward(dense2.output)
-    dense3.forward(activation2.output)
 
     # Perform a forward pass through the activation/loss function
     # takes the output of second dense layer here and returns loss
-    loss = loss_activation.forward(dense3.output, y)
+    loss = loss_activation.forward(dense2.output, y)
 
     # Calculate accuracy
     predictions = np.argmax(loss_activation.output, axis=1)
@@ -248,20 +333,19 @@ for epoch in range(10001):
 
     # Print epoch, loss and accuracy
     if not epoch % 100:
-        print(f'epoch: {epoch}, loss: {loss:.3f}, accuracy: {accuracy:.3f}')
+        print(f'epoch: {epoch}, \tloss: {loss:.3f}, \taccuracy: {accuracy:.3f}, \tlr: {optimizer.learning_rate:.5f}')
 
     # Backward pass
     loss_activation.backward(loss_activation.output, y)
-    dense3.backward(loss_activation.dinputs)
-    activation2.backward(dense3.dinputs)
-    dense2.backward(activation2.dinputs)
+    dense2.backward(loss_activation.dinputs)
     activation1.backward(dense2.dinputs)
     dense1.backward(activation1.dinputs)
 
     # Update weights and biases
+    optimizer.pre_update_params()
     optimizer.update_params(dense1)
     optimizer.update_params(dense2)
-    optimizer.update_params(dense3)
+
 
 print("Training finished.")
 print()
@@ -293,12 +377,10 @@ mesh_inputs = np.c_[xx.ravel(), yy.ravel()]
 dense1.forward(mesh_inputs)
 activation1.forward(dense1.output)
 dense2.forward(activation1.output)
-activation2.forward(dense2.output)
-dense3.forward(activation2.output)
 # Use the probabilities for smooth color transitions
 probs = loss_activation.activation.output if hasattr(loss_activation, 'activation') else loss_activation.output
-# We need to run softmax on dense3 output manually if accessing directly
-exp_values = np.exp(dense3.output - np.max(dense3.output, axis=1, keepdims=True))
+# We need to run softmax on dense2 output manually if accessing directly
+exp_values = np.exp(dense2.output - np.max(dense2.output, axis=1, keepdims=True))
 probs = exp_values / np.sum(exp_values, axis=1, keepdims=True)
 
 # Reshape for contour
