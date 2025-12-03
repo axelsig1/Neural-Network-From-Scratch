@@ -145,7 +145,7 @@ This implementation demonstrates:
 - For production use, consider frameworks like TensorFlow, PyTorch, or JAX
 - The decision boundary visualization helps understand how the network separates classes
 
-## Author
+## Motivation
 
 Created as a learning project for understanding neural network fundamentals from scratch.
 
