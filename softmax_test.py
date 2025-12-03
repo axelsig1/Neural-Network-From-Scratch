@@ -53,19 +53,20 @@ improves numerical stability and robustness of training and inference.
 import numpy as np
 import nnfs
 
+# Initialize nnfs library (sets random seed and configures global settings for reproducibility)
 nnfs.init()
 
-layer_outputs = [[4.8, 1.21, 2.385],
-                 [8.9, -1.81, 0.2],
-                 [1.41, 1.051, 0.026]]
+layer_outputs = np.array([[4.8, 1.21, 2.385],
+                          [8.9, -1.81, 0.2],
+                          [1.41, 1.051, 0.026]])
 
 exp_values = np.exp(layer_outputs - np.max(layer_outputs, axis=1, keepdims=True))
 
 
-print(np.sum(layer_outputs, axis=1, keepdims=True)) # summing each row, keepdims to maintain the 2D structure
+#print(np.sum(layer_outputs, axis=1, keepdims=True)) # summing each row, keepdims to maintain the 2D structure
 
 
 norm_values = exp_values / np.sum(exp_values, axis=1, keepdims=True)
 
-#print(norm_values)
-#print(np.sum(norm_values, axis=1))
+print(norm_values)
+print(np.sum(norm_values, axis=1))

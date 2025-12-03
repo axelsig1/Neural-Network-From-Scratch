@@ -269,9 +269,48 @@ class Optimizer_Ada_Grad:
         layer.biases += -self.learning_rate * layer.dbiases / (np.sqrt(layer.bias_cache) + self.epsilon)
         
 
-##################################
-## Next RMSProp Optimizer p.296 ##
-##################################
+
+
+class Optimizer_RMSprop:
+    """RMSprop Optimizer - Root Mean Square Propagation optimizer that adapts the learning rate
+    for each parameter based on a moving average of squared gradients.
+    This optimizer maintains a cache of squared gradients for weights and biases,
+    scaling down the learning rate for parameters with large gradients and scaling up
+    for parameters with small gradients.
+    Attributes:
+        learning_rate (float): Initial learning rate (default: 0.001)
+        decay (float): Learning rate decay factor (default: 0.0)
+        epsilon (float): Small constant for numerical stability (default: 1e-7)
+        rho (float): Decay rate for moving average (default: 0.9)
+    """
+    def __init__(self, learning_rate=0.001, decay=0.0, epsilon=1e-7, rho=0.9):
+        self.learning_rate = learning_rate
+        self.learning_rate_initial = learning_rate
+        self.decay = decay
+        self.iterations = 0
+        self.epsilon = epsilon
+        self.rho = rho
+
+    def pre_update_params(self):
+        if self.decay:
+            self.learning_rate = self.learning_rate_initial * (1.0 / (1.0 + self.decay * self.iterations))
+        self.iterations += 1
+
+    def update_params(self, layer):
+        # If we haven't yet created cache arrays, do so
+        if not hasattr(layer, 'weight_cache'):
+            # Initialize cache arrays
+            layer.weight_cache = np.zeros_like(layer.weights)
+            layer.bias_cache = np.zeros_like(layer.biases)
+
+        # Update cache with squared gradients
+        layer.weight_cache = self.rho * layer.weight_cache + (1 - self.rho) * layer.dweights**2
+        layer.bias_cache = self.rho * layer.bias_cache + (1 - self.rho) * layer.dbiases**2
+
+        # Normal SGD update + normalize with square root of cache
+        layer.weights += -self.learning_rate * layer.dweights / (np.sqrt(layer.weight_cache) + self.epsilon)
+        layer.biases += -self.learning_rate * layer.dbiases / (np.sqrt(layer.bias_cache) + self.epsilon)
+
 
 
 # Create dataset
@@ -296,8 +335,8 @@ loss_activation = Activation_Softmax_Loss_CategoricalCrossentropy()
 
 # Create optimizer
 #optimizer = Optimizer_SGD(learning_rate=1.0, decay=0.0001, momentum=0.9)
-optimizer = Optimizer_Ada_Grad(decay=1e-4)
-
+#optimizer = Optimizer_Ada_Grad(decay=1e-4)
+optimizer = Optimizer_RMSprop(learning_rate=0.02, decay=1e-5, rho=0.999)
 
 # Lists to track metrics for plotting
 loss_history = []
